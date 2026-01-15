@@ -1136,6 +1136,96 @@ static char *read_cmd_output(const char *cmd) {
   return buf;
 }
 
+static const char *default_backend_for_path(const char *relpath) {
+  // tune these to match your repo layout
+  if (path_contains(relpath, "Raylib") || path_contains(relpath, "raylib"))
+    return "raylib";
+  if (path_contains(relpath, "SDL3") || path_contains(relpath, "SDL") ||
+      path_contains(relpath, "sdl"))
+    return "sdl";
+  return "core";
+}
+
+static const char *annotation_backend(const char *raw, int line_start) {
+  // Look back up to 6 lines for "@backend X"
+  int lookback = 6;
+  int target = line_start;
+  int cur = 1;
+
+  const char *p = raw;
+  const char *end = raw + strlen(raw);
+  const char *ring[6] = {0};
+  int ringi = 0;
+
+  while (p < end) {
+    const char *ls = p;
+    while (p < end && *p != '\n')
+      p++;
+    size_t n = (size_t)(p - ls);
+
+    char *line = (char *)xmalloc(n + 1);
+    memcpy(line, ls, n);
+    line[n] = 0;
+
+    ring[ringi % lookback] = line;
+    ringi++;
+
+    if (cur == target) {
+      int start = ringi - 1 - lookback;
+      if (start < 0)
+        start = 0;
+      for (int i = ringi - 2; i >= start; i--) {
+        const char *s = ring[i % lookback];
+        if (!s)
+          continue;
+
+        const char *tag = strstr(s, "@backend");
+        if (tag) {
+          tag += strlen("@backend");
+          while (*tag && isspace((unsigned char)*tag))
+            tag++;
+
+          // read token
+          char buf[32] = {0};
+          int j = 0;
+          while (*tag &&
+                 (isalnum((unsigned char)*tag) || *tag == '_' || *tag == '-') &&
+                 j < 31) {
+            buf[j++] = *tag++;
+          }
+          buf[j] = 0;
+
+          for (int k = 0; k < lookback; k++)
+            if (ring[k])
+              free((void *)ring[k]);
+          if (buf[0])
+            return xstrdup(buf); // caller must free
+        }
+      }
+      for (int k = 0; k < lookback; k++)
+        if (ring[k])
+          free((void *)ring[k]);
+      return NULL;
+    }
+
+    if (p < end && *p == '\n')
+      p++;
+    cur++;
+    if (ringi > lookback) {
+      int idx = (ringi - lookback - 1) % lookback;
+      if (ring[idx]) {
+        free((void *)ring[idx]);
+        ring[idx] = 0;
+      }
+    }
+  }
+
+  for (int k = 0; k < lookback; k++)
+    if (ring[k])
+      free((void *)ring[k]);
+  return NULL;
+}
+
 /* =======================
    Main
    ======================= */
