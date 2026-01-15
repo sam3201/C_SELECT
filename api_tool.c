@@ -742,6 +742,7 @@ static void free_syms(SymVec *v) {
   for (size_t i = 0; i < v->len; i++) {
     free(v->data[i].name);
     free(v->data[i].file);
+    free(v->data[i].backend);
     free(v->data[i].snippet);
     free(v->data[i].sigline);
   }
