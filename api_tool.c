@@ -1139,11 +1139,15 @@ static char *read_cmd_output(const char *cmd) {
    ======================= */
 
 static void usage(void) {
-  puts(
-      "  gen    --root <dir> --out <api.def> --index <api_index.json> [--fn_prefix <prefix>] [--backend <sdl|raylib|core>] [--exclude_backend <name>] [--exclude_path <substr>]\n"
-"  search --root <dir> [--kind ...] [--name <exact>] [--pattern <substr>] [--backend <sdl|raylib|core>] [--exclude_backend <name>] [--exclude_path <substr>]\n"
-"  needs  --root <dir> --entry <file.c> --out <auto_import.h> --vis public|private [--preprocess <cmd>] [--backend <sdl|raylib|core>] [--exclude_backend <name>] [--exclude_path <substr>]\n"
-
+  puts("  gen    --root <dir> --out <api.def> --index <api_index.json> "
+       "[--fn_prefix <prefix>] [--backend <sdl|raylib|core>] "
+       "[--exclude_backend <name>] [--exclude_path <substr>]\n"
+       "  search --root <dir> [--kind ...] [--name <exact>] [--pattern "
+       "<substr>] [--backend <sdl|raylib|core>] [--exclude_backend <name>] "
+       "[--exclude_path <substr>]\n"
+       "  needs  --root <dir> --entry <file.c> --out <auto_import.h> --vis "
+       "public|private [--preprocess <cmd>] [--backend <sdl|raylib|core>] "
+       "[--exclude_backend <name>] [--exclude_path <substr>]\n");
 }
 
 int main(int argc, char **argv) {
