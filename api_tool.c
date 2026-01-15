@@ -299,6 +299,15 @@ static Visibility default_visibility_for_path(const char *relpath) {
   return VIS_PRIVATE;
 }
 
+static const char *default_backend_for_path(const char *relpath) {
+  // tune these to match your repo layout
+  if (path_contains(relpath, "Raylib") || path_contains(relpath, "raylib"))
+    return "raylib";
+  if (path_contains(relpath, "SDL3") || path_contains(relpath, "SDL") || path_contains(relpath, "sdl"))
+    return "sdl";
+  return "core";
+}
+
 static Visibility annotation_visibility(const char *raw, int line_start) {
   // Look back up to 6 lines for "@api public/private"
   int lookback = 6;
@@ -370,6 +379,69 @@ static Visibility annotation_visibility(const char *raw, int line_start) {
     if (ring[k])
       free((void *)ring[k]);
   return (Visibility)-1;
+}
+
+static const char *annotation_backend(const char *raw, int line_start) {
+  // Look back up to 6 lines for "@backend X"
+  int lookback = 6;
+  int target = line_start;
+  int cur = 1;
+
+  const char *p = raw;
+  const char *end = raw + strlen(raw);
+  const char *ring[6] = {0};
+  int ringi = 0;
+
+  while (p < end) {
+    const char *ls = p;
+    while (p < end && *p != '\n') p++;
+    size_t n = (size_t)(p - ls);
+
+    char *line = (char *)xmalloc(n + 1);
+    memcpy(line, ls, n);
+    line[n] = 0;
+
+    ring[ringi % lookback] = line;
+    ringi++;
+
+    if (cur == target) {
+      int start = ringi - 1 - lookback;
+      if (start < 0) start = 0;
+      for (int i = ringi - 2; i >= start; i--) {
+        const char *s = ring[i % lookback];
+        if (!s) continue;
+
+        const char *tag = strstr(s, "@backend");
+        if (tag) {
+          tag += strlen("@backend");
+          while (*tag && isspace((unsigned char)*tag)) tag++;
+
+          // read token
+          char buf[32] = {0};
+          int j = 0;
+          while (*tag && (isalnum((unsigned char)*tag) || *tag == '_' || *tag == '-') && j < 31) {
+            buf[j++] = *tag++;
+          }
+          buf[j] = 0;
+
+          for (int k = 0; k < lookback; k++) if (ring[k]) free((void *)ring[k]);
+          if (buf[0]) return xstrdup(buf); // caller must free
+        }
+      }
+      for (int k = 0; k < lookback; k++) if (ring[k]) free((void *)ring[k]);
+      return NULL;
+    }
+
+    if (p < end && *p == '\n') p++;
+    cur++;
+    if (ringi > lookback) {
+      int idx = (ringi - lookback - 1) % lookback;
+      if (ring[idx]) { free((void *)ring[idx]); ring[idx] = 0; }
+    }
+  }
+
+  for (int k = 0; k < lookback; k++) if (ring[k]) free((void *)ring[k]);
+  return NULL;
 }
 
 static char *normalize_first_sigline(const char *snippet) {
@@ -493,8 +565,6 @@ static void scan_file(const char *path, const char *root, SymVec *out_syms,
                       regex_t *re_fn, regex_t *re_typedef_struct,
                       regex_t *re_struct) {
 
-  const char *file_default_backend = default_backend_for_path(rel);
-
   size_t raw_len = 0;
   char *raw = read_entire_file(path, &raw_len);
   if (!raw)
@@ -510,6 +580,8 @@ static void scan_file(const char *path, const char *root, SymVec *out_syms,
     if (*rel == '/')
       rel++;
   }
+
+  const char *file_default_backend = default_backend_for_path(rel);
 
   Visibility file_default_vis = default_visibility_for_path(rel);
 
@@ -633,6 +705,17 @@ static void scan_file(const char *path, const char *root, SymVec *out_syms,
     sym.file = xstrdup(rel);
     sym.line_start = ls;
     sym.line_end = le;
+    const char *bk = file_default_backend;
+    char *annb = (char *)annotation_backend(raw, ls);
+    if (annb) {
+      bk = annb;
+    } // annb is heap
+
+    sym.backend = xstrdup(bk);
+
+    if (annb)
+      free(annb);
+
     sym.snippet = slice_lines(raw, ls, le);
     sym.sigline = NULL;
     vec_push(out_syms, sym);
@@ -684,6 +767,17 @@ static void scan_file(const char *path, const char *root, SymVec *out_syms,
           sym.file = xstrdup(rel);
           sym.line_start = sym_ls;
           sym.line_end = sym_ls;
+          const char *bk = file_default_backend;
+          char *annb = (char *)annotation_backend(raw, sym_ls);
+          if (annb) {
+            bk = annb;
+          } // annb is heap
+
+          sym.backend = xstrdup(bk);
+
+          if (annb)
+            free(annb);
+
           sym.snippet = slice_lines(raw, sym_ls, sym_ls);
           sym.sigline = normalize_first_sigline(sym.snippet);
           vec_push(out_syms, sym);
@@ -698,6 +792,17 @@ static void scan_file(const char *path, const char *root, SymVec *out_syms,
             sym.file = xstrdup(rel);
             sym.line_start = sym_ls;
             sym.line_end = le;
+            const char *bk = file_default_backend;
+            char *annb = (char *)annotation_backend(raw, sym_ls);
+            if (annb) {
+              bk = annb;
+            } // annb is heap
+
+            sym.backend = xstrdup(bk);
+
+            if (annb)
+              free(annb);
+
             sym.snippet = slice_lines(raw, sym_ls, le);
             sym.sigline = normalize_first_sigline(sym.snippet);
             vec_push(out_syms, sym);
@@ -800,6 +905,8 @@ static void write_index_json(const char *index_path, const SymVec *syms) {
     json_escape_write(f, s->file);
     fprintf(f, ",\"line_start\":%d,\"line_end\":%d", s->line_start,
             s->line_end);
+    fputs(",\"backend\":", f);
+    json_escape_write(f, s->backend ? s->backend : "core");
     fputs(",\"snippet\":", f);
     json_escape_write(f, s->snippet);
     fputc('}', f);
@@ -815,8 +922,22 @@ static bool starts_with(const char *s, const char *prefix) {
   return strncmp(s, prefix, n) == 0;
 }
 
+static bool backend_allowed(const char *sym_backend,
+                            const char *allow_backend,
+                            const char *exclude_backend) {
+  const char *b = sym_backend ? sym_backend : "core";
+
+  if (exclude_backend && strcmp(b, exclude_backend) == 0) return false;
+
+  if (!allow_backend || !*allow_backend) return true; // no allow filter
+
+  // allow_backend means: allow that backend + "core"
+  if (strcmp(b, "core") == 0) return true;
+  return strcmp(b, allow_backend) == 0;
+}
+
 static void emit_api_def(const char *out_path, const SymVec *syms,
-                         const char *fn_prefix) {
+                         const char *fn_prefix, const char *allow_backend, const char *exclude_backend) {
   FILE *f = fopen(out_path, "wb");
   if (!f)
     die("failed to open api.def output");
@@ -829,6 +950,8 @@ static void emit_api_def(const char *out_path, const SymVec *syms,
     const Symbol *s = &syms->data[i];
     if (!(s->kind == SYM_TYPEDEF_STRUCT || s->kind == SYM_STRUCT))
       continue;
+
+    if (!backend_allowed(s->backend, allow_backend, exclude_backend)) continue;
 
     const char *sn = s->snippet;
     const char *lb = strchr(sn, '{');
@@ -866,6 +989,8 @@ static void emit_api_def(const char *out_path, const SymVec *syms,
       continue;
     if (!s->sigline)
       continue;
+
+    if (!backend_allowed(s->backend, allow_backend, exclude_backend)) continue;
 
     // Parse ret + name + args: find '(' then last identifier before it.
     const char *sig = s->sigline;
@@ -1149,108 +1274,20 @@ static char *read_cmd_output(const char *cmd) {
   return buf;
 }
 
-static const char *default_backend_for_path(const char *relpath) {
-  // tune these to match your repo layout
-  if (path_contains(relpath, "Raylib") || path_contains(relpath, "raylib"))
-    return "raylib";
-  if (path_contains(relpath, "SDL3") || path_contains(relpath, "SDL") ||
-      path_contains(relpath, "sdl"))
-    return "sdl";
-  return "core";
-}
 
-static const char *annotation_backend(const char *raw, int line_start) {
-  // Look back up to 6 lines for "@backend X"
-  int lookback = 6;
-  int target = line_start;
-  int cur = 1;
-
-  const char *p = raw;
-  const char *end = raw + strlen(raw);
-  const char *ring[6] = {0};
-  int ringi = 0;
-
-  while (p < end) {
-    const char *ls = p;
-    while (p < end && *p != '\n')
-      p++;
-    size_t n = (size_t)(p - ls);
-
-    char *line = (char *)xmalloc(n + 1);
-    memcpy(line, ls, n);
-    line[n] = 0;
-
-    ring[ringi % lookback] = line;
-    ringi++;
-
-    if (cur == target) {
-      int start = ringi - 1 - lookback;
-      if (start < 0)
-        start = 0;
-      for (int i = ringi - 2; i >= start; i--) {
-        const char *s = ring[i % lookback];
-        if (!s)
-          continue;
-
-        const char *tag = strstr(s, "@backend");
-        if (tag) {
-          tag += strlen("@backend");
-          while (*tag && isspace((unsigned char)*tag))
-            tag++;
-
-          // read token
-          char buf[32] = {0};
-          int j = 0;
-          while (*tag &&
-                 (isalnum((unsigned char)*tag) || *tag == '_' || *tag == '-') &&
-                 j < 31) {
-            buf[j++] = *tag++;
-          }
-          buf[j] = 0;
-
-          for (int k = 0; k < lookback; k++)
-            if (ring[k])
-              free((void *)ring[k]);
-          if (buf[0])
-            return xstrdup(buf); // caller must free
-        }
-      }
-      for (int k = 0; k < lookback; k++)
-        if (ring[k])
-          free((void *)ring[k]);
-      return NULL;
-    }
-
-    if (p < end && *p == '\n')
-      p++;
-    cur++;
-    if (ringi > lookback) {
-      int idx = (ringi - lookback - 1) % lookback;
-      if (ring[idx]) {
-        free((void *)ring[idx]);
-        ring[idx] = 0;
-      }
-    }
-  }
-
-  for (int k = 0; k < lookback; k++)
-    if (ring[k])
-      free((void *)ring[k]);
-  return NULL;
-}
 
 /* =======================
    Main
    ======================= */
 
 static void usage(void) {
-  puts("  gen    --root <dir> --out <api.def> --index <api_index.json> "
+  puts("  gen    --root <dir> --out generated/api.def --index generated/api_index.json "
        "[--fn_prefix <prefix>] [--backend <sdl|raylib|core>] "
        "[--exclude_backend <name>] [--exclude_path <substr>]\n"
        "  search --root <dir> [--kind ...] [--name <exact>] [--pattern "
        "<substr>] [--backend <sdl|raylib|core>] [--exclude_backend <name>] "
        "[--exclude_path <substr>]\n"
-       "  needs  --root <dir> --entry <file.c> --out <auto_import.h> --vis "
+       "  needs  --root <dir> --entry <file.c> --out generated/auto_import.h --vis "
        "public|private [--preprocess <cmd>] [--backend <sdl|raylib|core>] "
        "[--exclude_backend <name>] [--exclude_path <substr>]\n");
 }
@@ -1263,8 +1300,8 @@ int main(int argc, char **argv) {
   const char *cmd = argv[1];
 
   const char *root = ".";
-  const char *out_def = "framework/api.def";
-  const char *out_index = "framework/api_index.json";
+  const char *out_def = "generated/api.def";
+  const char *out_index = "generated/api_index.json";
   const char *fn_prefix = NULL;
 
   const char *s_kind = NULL;
@@ -1272,9 +1309,13 @@ int main(int argc, char **argv) {
   const char *s_pattern = NULL;
 
   const char *entry_path = NULL;
-  const char *auto_out = "framework/auto_import.h";
+  const char *auto_out = "generated/auto_import.h";
   const char *vis_mode = "public";
   const char *pre_cmd = NULL;
+
+  const char *allow_backend = NULL;      // e.g. "sdl"
+  const char *exclude_backend = NULL;    // e.g. "raylib"
+  const char *exclude_path = NULL;       // e.g. "Raylib"
 
   for (int i = 2; i < argc; i++) {
     if (strcmp(argv[i], "--root") == 0 && i + 1 < argc)
@@ -1299,6 +1340,12 @@ int main(int argc, char **argv) {
       vis_mode = argv[++i];
     else if (strcmp(argv[i], "--preprocess") == 0 && i + 1 < argc)
       pre_cmd = argv[++i];
+    else if (strcmp(argv[i], "--backend") == 0 && i + 1 < argc)
+      allow_backend = argv[++i];
+    else if (strcmp(argv[i], "--exclude_backend") == 0 && i + 1 < argc)
+      exclude_backend = argv[++i];
+    else if (strcmp(argv[i], "--exclude_path") == 0 && i + 1 < argc)
+      exclude_path = argv[++i];
   }
 
   // Compile regexes
@@ -1333,9 +1380,7 @@ int main(int argc, char **argv) {
     ensure_parent_dir(out_index);
     ensure_parent_dir(out_def);
     write_index_json(out_index, &syms);
-    fputs(",\"backend\":", f);
-    json_escape_write(f, s->backend ? s->backend : "core");
-    emit_api_def(out_def, &syms, fn_prefix);
+    emit_api_def(out_def, &syms, fn_prefix, allow_backend, exclude_backend);
     printf("Wrote %s\nWrote %s\n", out_def, out_index);
     free_syms(&syms);
     return 0;
