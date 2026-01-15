@@ -1140,13 +1140,9 @@ static char *read_cmd_output(const char *cmd) {
 
 static void usage(void) {
   puts(
-      "api_tool\n"
-      "  gen    --root <dir> --out <framework/api.def> --index "
-      "<framework/api_index.json> [--fn_prefix <prefix>]\n"
-      "  search --root <dir> [--kind fn|fn_proto|fn_def|struct|typedef_struct] "
-      "[--name <exact>] [--pattern <substr>]\n"
-      "  needs  --root <dir> --entry <file.c> --out <framework/auto_import.h> "
-      "--vis public|private [--preprocess <cmd>]\n");
+"  gen    --root <dir> --out <api.def> --index <api_index.json> [--fn_prefix <prefix>] [--backend <sdl|raylib|core>] [--exclude_backend <name>] [--exclude_path <substr>]\n"
+"  search --root <dir> [--kind ...] [--name <exact>] [--pattern <substr>] [--backend <sdl|raylib|core>] [--exclude_backend <name>] [--exclude_path <substr>]\n"
+"  needs  --root <dir> --entry <file.c> --out <auto_import.h> --vis public|private [--preprocess <cmd>] [--backend <sdl|raylib|core>] [--exclude_backend <name>] [--exclude_path <substr>]\n"
 }
 
 int main(int argc, char **argv) {
