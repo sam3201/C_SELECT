@@ -568,6 +568,17 @@ static void scan_file(const char *path, const char *root, SymVec *out_syms,
     sym.file = xstrdup(rel);
     sym.line_start = ls;
     sym.line_end = le;
+    const char *bk = file_default_backend;
+    char *annb = (char *)annotation_backend(raw, ls);
+    if (annb) {
+      bk = annb;
+    } // annb is heap
+
+    sym.backend = xstrdup(bk);
+
+    if (annb)
+      free(annb);
+
     sym.snippet = slice_lines(raw, ls, le);
     sym.sigline = NULL;
     vec_push(out_syms, sym);
