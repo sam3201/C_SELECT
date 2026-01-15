@@ -54,6 +54,8 @@ typedef struct {
   int line_end;
   char *snippet; // raw snippet lines
   char *sigline; // for functions: normalized first-line signature (best-effort)
+  char *backend; // "core" | "sdl" | "raylib" | ...
+
 } Symbol;
 
 typedef struct {
