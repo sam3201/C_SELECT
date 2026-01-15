@@ -1333,6 +1333,8 @@ int main(int argc, char **argv) {
     ensure_parent_dir(out_index);
     ensure_parent_dir(out_def);
     write_index_json(out_index, &syms);
+    fputs(",\"backend\":", f);
+    json_escape_write(f, s->backend ? s->backend : "core");
     emit_api_def(out_def, &syms, fn_prefix);
     printf("Wrote %s\nWrote %s\n", out_def, out_index);
     free_syms(&syms);
