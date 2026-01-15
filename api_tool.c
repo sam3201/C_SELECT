@@ -493,6 +493,8 @@ static void scan_file(const char *path, const char *root, SymVec *out_syms,
                       regex_t *re_fn, regex_t *re_typedef_struct,
                       regex_t *re_struct) {
 
+  const char *file_default_backend = default_backend_for_path(rel);
+
   size_t raw_len = 0;
   char *raw = read_entire_file(path, &raw_len);
   if (!raw)
